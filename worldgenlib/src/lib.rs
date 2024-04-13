@@ -360,6 +360,81 @@ impl HeightMap {
         Self::from_flat(params.width, params.height, gen_wrapped_noise(&params))
     }
 
+    pub fn write<W>(&self, mut dst: W) -> std::io::Result<usize>
+    where
+        W: std::io::Write,
+    {
+        let mut bytes_written = 0;
+        bytes_written += dst.write(&['W' as u8, 'H' as u8, 'M' as u8, '1' as u8])?;
+        bytes_written += dst.write(&self.width.to_le_bytes())?;
+        bytes_written += dst.write(&self.height.to_le_bytes())?;
+        for h in &self.heights {
+            let h_bytes = h.to_le_bytes();
+            bytes_written += dst.write(&h_bytes)?;
+        }
+        Ok(bytes_written)
+    }
+
+    pub fn load<R>(mut src: R) -> std::io::Result<Self>
+    where
+        R: std::io::Read,
+    {
+        use std::io::Error;
+        use std::io::ErrorKind;
+        let mut magic_bytes = [0x00, 0x00, 0x00, 0x00];
+        src.read(&mut magic_bytes)?;
+        if magic_bytes[0] != 'W' as u8 ||
+            magic_bytes[1] != 'H' as u8 ||
+            magic_bytes[2] != 'M' as u8 ||
+            magic_bytes[3] != '1' as u8
+        {
+            return Err(Error::new(
+                ErrorKind::InvalidInput,
+                format!(
+                    "Invalid magic bytes: {:#x} {:#x} {:#x} {:#x}",
+                    magic_bytes[0], magic_bytes[1], magic_bytes[2], magic_bytes[3],
+                ),
+            ));
+        }
+
+        let mut width_bytes = [0x00, 0x00, 0x00, 0x00];
+        if src.read(&mut width_bytes)? < 4 {
+            return Err(Error::new(
+                ErrorKind::UnexpectedEof,
+                "Could not read 4 bytes for width",
+            ));
+        }
+        let width = u32::from_le_bytes(width_bytes);
+
+        let mut height_bytes = [0x00, 0x00, 0x00, 0x00];
+        if src.read(&mut height_bytes)? < 4 {
+            return Err(Error::new(
+                ErrorKind::UnexpectedEof,
+                "Could not read 4 bytes for height",
+            ));
+        }
+        let height = u32::from_le_bytes(height_bytes);
+
+        let len = (width * height) as usize;
+        let mut data = Vec::with_capacity(len);
+        for index in 0..len {
+            let mut data_bytes = [0x00, 0x00, 0x00, 0x00];
+            if src.read(&mut data_bytes)? < 4 {
+                return Err(Error::new(
+                    ErrorKind::UnexpectedEof,
+                    format!("Could not read 4 bytes for a float value at index {}", index),
+                ));
+            }
+            data.push(f32::from_le_bytes(data_bytes));
+        }
+
+        Ok(Self{
+            width,
+            height,
+            heights: data,
+        })
+    }
+
     pub fn width(&self) -> u32 {
         self.width
     }
@@ -368,7 +443,7 @@ impl HeightMap {
         self.height
     }
 
-    pub fn save(&self, filename: &str) -> Result<(), Box<dyn Error>> {
+    pub fn save_file(&self, filename: &str) -> Result<(), Box<dyn Error>> {
         if filename.ends_with(".bin") {
             use std::fs::*;
             use std::io::*;
@@ -392,7 +467,7 @@ impl HeightMap {
         Ok(())
     }
 
-    pub fn load(filename: &str) -> Result<Self, Box<dyn Error>> {
+    pub fn load_file(filename: &str) -> Result<Self, Box<dyn Error>> {
         if filename.ends_with(".bin") {
             use std::fs::*;
             use std::io::*;

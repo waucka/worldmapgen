@@ -247,13 +247,23 @@ fn noisegen(output_filename: &str, script_text: &str) {
         lua.load(script_text).exec()
     }).unwrap();
     if let Some(hm) = hm {
-        hm.save(output_filename).unwrap();
+        hm.save_file(output_filename).unwrap();
     }
 }
 
 fn terraingen(output_filename: &str) {
-    //use rand::random;
-    let rand_seed: u64 = 1;//random();
+    use rand::random;
+    let rand_seed: u64 = 12205965543698984759;//random();
+    dbg!(rand_seed);
+    let sea_prevalence = 0.5;
+    dbg!(sea_prevalence);
+    let sea_depth = 100.0;
+    dbg!(sea_depth);
+    let mountains_max_height = 200.0;
+    dbg!(mountains_max_height);
+    let sea_level = 10000.0;
+    let terrain_min = sea_level - sea_depth;
+    let terrain_max = sea_level + mountains_max_height;
     let mut rng = SmallRng::seed_from_u64(rand_seed);
     // Width is twice 360 (2x horizontal resolution)
     // Height is twice 85 * 2 (2x vertical resolution excluding the poles)
@@ -276,8 +286,8 @@ fn terraingen(output_filename: &str) {
             ],
         ));
 
-        noise.constrain(0.15, 0.55);
-        noise.save("base_noise.png").unwrap();
+        noise.constrain(sea_level * 0.15, sea_level * 0.55);
+        noise.save_file("base_noise.png").unwrap();
         noise
     };
 
@@ -315,16 +325,16 @@ fn terraingen(output_filename: &str) {
         //noise.elevate(0.3);
         //noise.clamp(0.0, 1.0);
         //noise.normalize();
-        noise.constrain(0.5, 1.0);
+        noise.constrain(sea_level * 1.1, sea_level * 1.4);
         //noise.scale(10.0);
-        noise.save("hill_country.png");
+        noise.save_file("hill_country.png");
         noise
     };
     let mut mountains = HeightMap::new(width, full_height, 0.0);
     let mountain_choices = [
-        (HeightMap::load("mountain_test.bin").unwrap(), 0.75),
-        (HeightMap::load("mountain_test2.bin").unwrap(), 0.24),
-        (HeightMap::load("mountain_test3.bin").unwrap(), 0.01),
+        (HeightMap::load_file("mountain_test.bin").unwrap(), 0.75),
+        (HeightMap::load_file("mountain_test2.bin").unwrap(), 0.24),
+        (HeightMap::load_file("mountain_test3.bin").unwrap(), 0.01),
     ];
     let num_mountain_choices = mountain_choices.len();
     for _ in 0..400 {
@@ -347,14 +357,14 @@ fn terraingen(output_filename: &str) {
                 rng.gen_range(0.0..360.0),
             ),
             64.0,
-            rng.gen_range(0.7..1.5),
+            rng.gen_range(0.5..1.0),
         );
     }
-    mountains.constrain(0.0, 2.0);
+    mountains.constrain(0.0, mountains_max_height);
 
     let mut mountains_copy = mountains.clone();
     mountains_copy.normalize();
-    mountains_copy.save("mountains_noise.png").unwrap();
+    mountains_copy.save_file("mountains_noise.png").unwrap();
 
     let sea_regions = gen_wrapped_noise(&NoiseParams::from_pairs(
         width, full_height,
@@ -366,7 +376,6 @@ fn terraingen(output_filename: &str) {
             (8.0 * 20.0, 0.125),
         ],
     ));
-    //let mut sea_regions = HeightMap::new(width, full_height, -5.0);
 
     let mountains_regions = gen_wrapped_noise(&NoiseParams::from_pairs(
         width, full_height,
@@ -417,7 +426,7 @@ fn terraingen(output_filename: &str) {
     mountains_regions.apply_bands(&bands);
     let regions_clear = mountains_regions.clone();
     mountains_regions.gaussian_blur(10.0);
-    mountains_regions.save("mountains_regions_noise.png").unwrap();
+    mountains_regions.save_file("mountains_regions_noise.png").unwrap();
 
     let hill_country_regions = gen_wrapped_noise(&NoiseParams::from_pairs(
         width, full_height,
@@ -468,7 +477,7 @@ fn terraingen(output_filename: &str) {
     hill_country_regions.apply_bands(&bands);
     let regions_clear = hill_country_regions.clone();
     hill_country_regions.gaussian_blur(10.0);
-    hill_country_regions.save("hill_country_regions_noise.png").unwrap();
+    hill_country_regions.save_file("hill_country_regions_noise.png").unwrap();
 
     terrain.add_layer(&mountains_regions, &mountains);
     terrain.blend_layer(&hill_country_regions, &hill_country);
@@ -500,12 +509,12 @@ fn terraingen(output_filename: &str) {
     sea_regions.normalize();
     sea_regions.elevate(0.1);
     sea_regions.clamp(0.0, 1.0);
-    let bands = Bands::new(2, 0.0, 1.0, 1.0);
+    let bands = Bands::new(2, sea_prevalence, 1.0, 1.0);
     sea_regions.apply_bands(&bands);
     {
         let mut sea_regions_copy = sea_regions.clone();
         sea_regions_copy.normalize();
-        sea_regions_copy.save("sea_regions_noise.png").unwrap();
+        sea_regions_copy.save_file("sea_regions_noise.png").unwrap();
     }
     sea_regions.constrain(-1.0, 0.0);
     let hm_zero = HeightMap::new(width, full_height, 0.0);
@@ -514,10 +523,10 @@ fn terraingen(output_filename: &str) {
     {
         let mut sea_regions_copy = sea_regions.clone();
         sea_regions_copy.normalize();
-        sea_regions_copy.save("sea_regions_noise_clipped.png").unwrap();
+        sea_regions_copy.save_file("sea_regions_noise_clipped.png").unwrap();
     }
     sea_regions.constrain(0.0, 1.0);
-    let sea_bottom = HeightMap::new(width, full_height, -1.0);
+    let sea_bottom = HeightMap::new(width, full_height, -sea_depth);
     terrain.blend_variable(&sea_bottom, &sea_regions);
 
     let mut heightmap = terrain;
@@ -525,7 +534,7 @@ fn terraingen(output_filename: &str) {
     {
         let mut hm = heightmap.clone();
         hm.normalize();
-        hm.save("before_scaling.png");
+        hm.save_file("before_scaling.png");
     }
 
     let erosion_config = ErosionConfig{
@@ -545,7 +554,7 @@ fn terraingen(output_filename: &str) {
     {
         let mut hm = heightmap.clone();
         hm.normalize();
-        hm.save("before_erode.png").unwrap();
+        hm.save_file("before_erode.png").unwrap();
     }
     let t_start = std::time::Instant::now();
     sea_regions.constrain(0.0, 1.0);
@@ -556,7 +565,7 @@ fn terraingen(output_filename: &str) {
     {
         let mut hm = heightmap.clone();
         hm.normalize();
-        hm.save("eroded.png").unwrap();
+        hm.save_file("eroded.png").unwrap();
     }
     println!("Erosion on a {}x{} map took {}ms", heightmap.width(), heightmap.height(), elapsed);
 
@@ -564,7 +573,7 @@ fn terraingen(output_filename: &str) {
     {
         let mut hm = heightmap.clone();
         hm.normalize();
-        hm.save("rescaled.png");
+        hm.save_file("rescaled.png");
     }
     let mut heightmap = heightmap.cropped(0, margin_size * 10, width * 10, height * 10);
 
@@ -607,14 +616,14 @@ fn terraingen(output_filename: &str) {
     }
     south_pole_avg /= width as f32;
 
-    heightmap.save("gall.png").unwrap();
+    heightmap.save_file("gall.png").unwrap();
     let spherical = heightmap.to_spherical(
         20,
         polar_exclusion_zone,
         polar_transition_zone,
         rng.gen(),
     );
-    spherical.save(output_filename).unwrap();
+    spherical.save_file(output_filename).unwrap();
 }
 
 fn make_cone_mountain(size: u32, rand_seed: i32, config: &ConeConfig) -> (HeightMap, Vec<f32>) {
@@ -760,7 +769,7 @@ fn mountaingen(config: &MountainConfig, rand_seed: i32, output_filename: &str) {
         }
     }
     heightmap.constrain(0.0, 1.0);
-    heightmap.save(output_filename).unwrap();
+    heightmap.save_file(output_filename).unwrap();
 }
 
 // STFU, you obnoxious pedant.
@@ -849,7 +858,7 @@ fn cratergen(config: &CraterConfig, rand_seed: i32, output_filename: &str) {
         crater.normalize();
     }
 
-    crater.save(output_filename).unwrap();
+    crater.save_file(output_filename).unwrap();
 }
 
 fn smooth_min(a: f32, b: f32, k: f32) -> f32 {
